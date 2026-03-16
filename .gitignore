@@ -1,0 +1,42 @@
+# Claude Code - Local development only (antigravity environment)
+.claude/
+/agents/
+/skills/
+/settings/
+
+# Environment variables - NEVER commit
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+
+# Build output
+dist/
+build/
+frontend/dist/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes
+postgres_data/
+prometheus_data/
+grafana_data/

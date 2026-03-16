@@ -1,0 +1,97 @@
+pg_blocking_count:
+  query: |
+    SELECT COUNT(*) AS count
+    FROM pg_stat_activity
+    WHERE cardinality(pg_blocking_pids(pid)) > 0
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Number of sessions blocked by other sessions"
+
+pg_dead_tuple_ratio:
+  query: |
+    SELECT
+      schemaname || '.' || relname as relname,
+      ROUND(100.0 * n_dead_tup / NULLIF(n_dead_tup + n_live_tup, 0), 2) as ratio
+    FROM pg_stat_user_tables
+    WHERE n_dead_tup > 0
+  metrics:
+    - relname:
+        usage: "LABEL"
+    - ratio:
+        usage: "GAUGE"
+        description: "Dead tuple ratio per table"
+
+pg_connection_utilization:
+  query: |
+    SELECT
+      COUNT(*) as active,
+      setting::int as max_connections,
+      ROUND(100.0 * COUNT(*) / setting::int, 2) as utilization_pct
+    FROM pg_stat_activity, pg_settings
+    WHERE pg_settings.name = 'max_connections'
+  metrics:
+    - active:
+        usage: "GAUGE"
+        description: "Active connections"
+    - max_connections:
+        usage: "GAUGE"
+        description: "Maximum allowed connections"
+    - utilization_pct:
+        usage: "GAUGE"
+        description: "Connection pool utilization percentage"
+
+pg_lock_waits:
+  query: |
+    SELECT COUNT(*) AS count
+    FROM pg_stat_activity
+    WHERE cardinality(pg_blocking_pids(pid)) > 0
+      AND wait_event_type = 'Lock'
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Number of lock wait events"
+
+pg_longest_query_seconds:
+  query: |
+    SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (now() - query_start))), 0) AS max_duration_seconds
+    FROM pg_stat_activity
+    WHERE state = 'active'
+      AND query NOT LIKE '%%pg_stat_activity%%'
+  metrics:
+    - max_duration_seconds:
+        usage: "GAUGE"
+        description: "Duration of longest running query in seconds"
+
+pg_index_unused_count:
+  query: |
+    SELECT COUNT(*) AS count
+    FROM pg_stat_user_indexes
+    WHERE idx_scan = 0
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Number of indexes with zero scans"
+
+pg_replication_lag_seconds:
+  query: |
+    SELECT COALESCE(
+      MAX(EXTRACT(EPOCH FROM write_lag) +
+          EXTRACT(EPOCH FROM flush_lag) +
+          EXTRACT(EPOCH FROM replay_lag)), 0
+    ) AS max_lag_seconds
+    FROM pg_stat_replication
+  metrics:
+    - max_lag_seconds:
+        usage: "GAUGE"
+        description: "Maximum replication lag in seconds"
+
+pg_vacuum_needed_count:
+  query: |
+    SELECT COUNT(*) AS count
+    FROM pg_stat_user_tables
+    WHERE ROUND(100.0 * n_dead_tup / NULLIF(n_dead_tup + n_live_tup, 0), 2) > 10
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Tables with >10% dead tuple ratio"

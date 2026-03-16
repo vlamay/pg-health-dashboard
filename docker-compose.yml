@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: pg-health-postgres
+    environment:
+      POSTGRES_DB: pghealth
+      POSTGRES_USER: pghealth
+      POSTGRES_PASSWORD: pghealth
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pghealth -d pghealth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pg-health
+
+  backend:
+    build: ./backend
+    container_name: pg-health-backend
+    environment:
+      DATABASE_URL: postgresql://pghealth:pghealth@postgres:5432/pghealth
+      METRICS_REFRESH_INTERVAL_S: 5
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pg-health
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: pg-health-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+      - grafana
+      - prometheus
+    networks:
+      - pg-health
+    restart: unless-stopped
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: pg-health-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://pghealth:pghealth@postgres:5432/pghealth?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./infra/postgres_exporter/queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    command:
+      - '--extend.query-path=/etc/postgres_exporter/queries.yaml'
+      - '--web.listen-address=:9187'
+    networks:
+      - pg-health
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: pg-health-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=http://localhost:3000/prometheus/'
+      - '--web.route-prefix=/prometheus/'
+    networks:
+      - pg-health
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: pg-health-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SERVER_ROOT_URL: "http://localhost:3000/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - pg-health
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  pg-health:
+    driver: bridge
